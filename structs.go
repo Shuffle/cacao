@@ -32,6 +32,9 @@ type Target struct {
 	Name    string `json:"name"`
 	Address struct {
 		Ipv4 []string `json:"ipv4"`
+		Ipv6 []string `json:"ipv6"`
+		Url  []string `json:"url"`
+		Domain []string `json:"domain"`
 	} `json:"address"`
 	AuthenticationInfo string `json:"authentication_info"`
 	Port               string `json:"port"`

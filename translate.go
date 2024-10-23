@@ -71,14 +71,48 @@ func TranslateToShuffle(cacao *Cacao) shuffle.Workflow {
 			continue
 		}
 
+
+		configureAction := false
+		if strings.HasPrefix(key, "start--") {
+			newAction.Label = "start"
+			shuffleWorkflow.Start = newAction.ID
+			newAction.IsStartNode = true
+
+			if len(value.Commands) > 0 {
+				configureAction = true
+			} else {
+				continue
+			}
+		} else if strings.HasPrefix(key, "end--") {
+			newAction.Label = "end"
+
+			if len(value.Commands) > 0 {
+				configureAction = true
+			} else {
+				continue
+			}
+		} else if strings.HasPrefix(key, "action--") {
+			actions[key] = value
+
+			newAction.Label = value.Name
+			configureAction = true
+		} else {
+			log.Printf("\n\n[ERROR] Unknown key: %s\n\n", key)
+			continue
+		}
+
+		branchAdded := false
 		if len(value.OnCompletion) > 0 {
 			// Branch addition
 			if strings.Contains(value.OnCompletion, "--") {
 				shuffleWorkflow.Branches = append(shuffleWorkflow.Branches, shuffle.Branch{
 					ID: uuid.New().String(),
-					SourceID: newAction.ID,
+					SourceID: newActionID, 
 					DestinationID: strings.Split(value.OnCompletion, "--")[1],
+					Label: "From " + strings.Split(key, "--")[0],
 				})
+
+				branchAdded = true 
 
 
 			} else {
@@ -92,38 +126,42 @@ func TranslateToShuffle(cacao *Cacao) shuffle.Workflow {
 			} 
 		}
 
-		configureAction := false
-		if strings.HasPrefix(key, "start--") {
-			newAction.Label = "start"
-			shuffleWorkflow.Start = newAction.ID
-			newAction.IsStartNode = true
-
-			if len(value.Commands) > 0 {
-				configureAction = true
-			}
-		} else if strings.HasPrefix(key, "end--") {
-			newAction.Label = "end"
-
-			if len(value.Commands) > 0 {
-				configureAction = true
-			}
-		} else if strings.HasPrefix(key, "action--") {
-			actions[key] = value
-
-			newAction.Label = value.Name
-			configureAction = true
-		} else {
-			log.Printf("\n\n[ERROR] Unknown key: %s\n\n", key)
-			continue
-		}
-
 		appended := false
 		if configureAction {
 			log.Printf("[DEBUG] Configuring action: %s", key)
 
+			relevantTarget := Target{}
+			relevantAuth := AuthenticationInfo{}
 			if len(value.Targets) > 0 {
-				log.Printf("\n\n[WARNING] Adding target configs to action: %s\n\n", key)
+				// Mapping targets to the commands for fillin
+				if len(value.Targets) > 0 {
+					log.Printf("\n\n[ERROR] Only allowing one CACAO target for now. ID: %s", cacao.ID)
+				}
+
+				for _, target := range value.Targets {
+					log.Printf("[DEBUG] Target: %s", target)
+
+					// Check for the target in the actions
+					if _, ok := cacao.TargetDefinitions[target]; !ok { 
+						log.Printf("\n\n[ERROR] Target not found in cacao: %s\n\n", target)
+						continue
+					}
+
+					// Check for the agent in the actions
+					relevantTarget = cacao.TargetDefinitions[target]
+					if len(relevantTarget.AuthenticationInfo) > 0 {
+						if _, ok := cacao.AuthenticationInfoDefinitions[relevantTarget.AuthenticationInfo]; !ok {
+							log.Printf("\n\n[ERROR] AuthenticationInfo not found in cacao: %s\n\n", relevantTarget.AuthenticationInfo)
+							continue
+						} 
+
+						relevantAuth = cacao.AuthenticationInfoDefinitions[relevantTarget.AuthenticationInfo]
+					}
+
+					break
+				}
 			}
+
 
 			nextActionID := ""
 			for commandCount, command := range value.Commands {
@@ -134,6 +172,27 @@ func TranslateToShuffle(cacao *Cacao) shuffle.Workflow {
 
 				if len(value.Commands) > 1 {
 					newAction.Label = fmt.Sprintf("%d", commandCount+1)+"-"+value.Name
+				}
+
+				if len(relevantAuth.Type) > 0 || len(relevantAuth.Name) > 0 {
+					if relevantAuth.Type == "basic" || relevantAuth.Type == "http-basic" || relevantAuth.Type == "user-auth" { 
+						newAction.Parameters = append(newAction.Parameters, shuffle.WorkflowAppActionParameter{
+							Name: "username",
+							Value: "",
+
+							Configuration: true,
+							Required: true,
+						})
+						newAction.Parameters = append(newAction.Parameters, shuffle.WorkflowAppActionParameter{
+							Name: "password",
+							Value: "",
+
+							Configuration: true,
+							Required: true,
+						})
+					} else {
+						log.Printf("\n\n[ERROR] Type %s for auth translation from CACAO is not supported yet.", relevantAuth.Type)
+					}
 				}
 
 				if command.Type == "http-api" || command.Type == "http" {
@@ -156,6 +215,57 @@ func TranslateToShuffle(cacao *Cacao) shuffle.Workflow {
 						url = commandSplit[1]
 					}
 
+					if len(relevantTarget.Type) > 0 || len(relevantTarget.Name) > 0 {
+						log.Printf("[DEBUG] Target (%s): %s", relevantTarget.Type, relevantTarget.Name)
+						newStartinfo := "http://"
+						if relevantTarget.Port == "443" {
+							newStartinfo = "https://"
+						} 
+
+						if len(relevantTarget.Address.Domain) > 0 {
+							if len(relevantTarget.Address.Domain) > 1 {
+								log.Printf("[ERROR] Using first domain to map because there are %d for target %s", len(relevantTarget.Address.Domain), relevantTarget.Name)
+							}
+
+							newStartinfo += relevantTarget.Address.Domain[0]
+						} else if len(relevantTarget.Address.Url) > 0 {
+							if len(relevantTarget.Address.Ipv4) > 1 {
+								log.Printf("[ERROR] Using first url to map because there are %d for target %s", len(relevantTarget.Address.Ipv4), relevantTarget.Name)
+							}
+
+							newStartinfo = relevantTarget.Address.Url[0]
+						} else if len(relevantTarget.Address.Ipv4) > 0 {
+							if len(relevantTarget.Address.Ipv4) > 1 {
+								log.Printf("[ERROR] Using first ipv4 address to map because there are %d for target %s", len(relevantTarget.Address.Ipv4), relevantTarget.Name)
+							}
+
+							newStartinfo += relevantTarget.Address.Ipv4[0]
+						} else if len(relevantTarget.Address.Ipv6) > 0 {
+							if len(relevantTarget.Address.Ipv6) > 1 {
+								log.Printf("[ERROR] Using first ipv6 address to map because there are %d for target %s", len(relevantTarget.Address.Ipv6), relevantTarget.Name)
+							}
+
+							newStartinfo += relevantTarget.Address.Ipv6[0]
+						} else {
+							log.Printf("[ERROR] No address or name found for target %s", relevantTarget.Name)
+						}
+
+						if relevantTarget.Port != "80" && relevantTarget.Port != "443" {
+							if !strings.Contains(newStartinfo, ":") {
+								if !strings.HasSuffix(newStartinfo, "/") {
+									newStartinfo += newStartinfo+":"+relevantTarget.Port
+								} else {
+									newStartinfo += newStartinfo[0:len(newStartinfo)-1]+":"+relevantTarget.Port+"/"
+								}
+							}
+						}
+
+						url = fmt.Sprintf("%s%s", newStartinfo, url)
+					}
+
+					//relevantTarget := Target{}
+					//relevantAuth := AuthenticationInfo{}
+
 					headerString := ""
 					for headerKey, headerValue := range command.Headers {
 						if len(headerValue) == 0 {
@@ -166,48 +276,60 @@ func TranslateToShuffle(cacao *Cacao) shuffle.Workflow {
 					}
 
 					newAction.Name = method
-					newAction.Parameters = []shuffle.WorkflowAppActionParameter{
+					newAction.Parameters = append(newAction.Parameters,
 						shuffle.WorkflowAppActionParameter{
 							Name: "url",
 							Value: url,
 
 							Required: true,
+							Configuration: true,
 						},
+					)
+
+					newAction.Parameters = append(newAction.Parameters,
 						shuffle.WorkflowAppActionParameter{
 							Name: "headers",
 							Value: headerString,
 
 							Required: false,
 						},
+					)
+
+					newAction.Parameters = append(newAction.Parameters,
 						shuffle.WorkflowAppActionParameter{
 							Name: "verify",
 							Value: "false",
 
 							Required: false,
 						},
+					)
+
+					newAction.Parameters = append(newAction.Parameters,
 						shuffle.WorkflowAppActionParameter{
 							Name: "timeout",
-							Value: "10",
+							Value: "30",
 
 							Required: false,
 						},
-					}
+					)
 
 					if len(command.Content) > 0 {
 						newAction.Parameters = append(newAction.Parameters, shuffle.WorkflowAppActionParameter{
 							Name: "body",
 							Value: command.Content,
+							Multiline: true,
 
 							Required: false,
 						})
 					}
+
 				}
 
+				// Handles proper branching
 				if len(value.Commands) > 1 {
 					appended = true
-
-
-					if commandCount != 0 && commandCount != len(value.Commands)-1 {
+					//if commandCount != 0 && commandCount != len(value.Commands)-1 {
+					if commandCount != 0 {
 						if len(nextActionID) == 0 {
 							newAction.ID = uuid.New().String()
 						} else {
@@ -215,11 +337,28 @@ func TranslateToShuffle(cacao *Cacao) shuffle.Workflow {
 						}
 					}
 
+					if commandCount == 0 && branchAdded {
+						// Remove last branch
+						shuffleWorkflow.Branches = shuffleWorkflow.Branches[:len(shuffleWorkflow.Branches)-1]
+					}
+
+					parsedLabel := fmt.Sprintf("command %d to %d", commandCount+1, commandCount+2)
+
 					nextActionID = uuid.New().String()
+					if commandCount == len(value.Commands)-1 {
+						if len(value.OnCompletion) > 0 {
+							nextActionID = strings.Split(value.OnCompletion, "--")[1]
+
+							parsedLabel = fmt.Sprintf("command %d to %s", commandCount+1, strings.Split(value.OnCompletion, "--")[0])
+						}
+					}
+
 					shuffleWorkflow.Branches = append(shuffleWorkflow.Branches, shuffle.Branch{
 						ID: uuid.New().String(),
 						SourceID: newAction.ID,
 						DestinationID: nextActionID,
+
+						Label: parsedLabel,
 					})
 
 
@@ -228,9 +367,11 @@ func TranslateToShuffle(cacao *Cacao) shuffle.Workflow {
 				}
 			}
 
+			// Not re-appending an action
 			if appended { 
 				continue
 			}
+
 		} else {
 			newAction.Name = "repeat_back_to_me"
 
