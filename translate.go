@@ -292,6 +292,7 @@ func TranslateToShuffle(cacao *Cacao) shuffle.Workflow {
 							Value: headerString,
 
 							Required: false,
+							Multiline: true,
 						},
 					)
 

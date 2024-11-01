@@ -196,7 +196,7 @@
       "description": "This action will set the following firewall rule in Opnsense for IPv4 (host):  ",
       "app_id": "",
       "errors": null,
-      "id": "332a58d8-e262-410e-8d14-4332225f7bb5",
+      "id": "3f31c89c-f5fe-4921-a3dc-c3426a0c1c7b",
       "is_valid": false,
       "label": "2-Reconfigure Opnsense firewall",
       "public": false,
@@ -537,8 +537,8 @@
   ],
   "branches": [
     {
-      "destination_id": "332a58d8-e262-410e-8d14-4332225f7bb5",
-      "id": "83fcd557-09b9-4865-96a6-81deea2815b9",
+      "destination_id": "3f31c89c-f5fe-4921-a3dc-c3426a0c1c7b",
+      "id": "358ac243-46e2-40bc-b329-b39167221025",
       "source_id": "e70f3678-40ca-4ad0-b49f-b7e5038f0a52",
       "label": "command 1 to 2",
       "has_errors": false,
@@ -549,8 +549,8 @@
     },
     {
       "destination_id": "4f5df533-d652-4e9e-afbf-aaaf5e4c8c8f",
-      "id": "35f3baed-c866-49aa-beb1-9634fad9ad6e",
-      "source_id": "332a58d8-e262-410e-8d14-4332225f7bb5",
+      "id": "073ce02b-15be-4f43-a15f-ae6a76f58b19",
+      "source_id": "3f31c89c-f5fe-4921-a3dc-c3426a0c1c7b",
       "label": "command 2 to end",
       "has_errors": false,
       "conditions": null,
